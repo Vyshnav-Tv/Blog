@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import useAuth from '../context/useAuth'
 import { profileService } from '../services/profileService'
+import getRequestErrorMessage from '../utils/getRequestErrorMessage'
 
 export default function Profile() {
   const { user, saveUser } = useAuth()
@@ -57,7 +58,7 @@ export default function Profile() {
       saveUser(profile)
       setSaved(true)
     } catch (requestError) {
-      setError(requestError.response?.data?.message || 'Unable to update profile.')
+      setError(getRequestErrorMessage(requestError, 'Unable to update profile.'))
     }
   }
 
@@ -65,7 +66,19 @@ export default function Profile() {
     <>
       <div className="dashboard-header"><div><span className="eyebrow">Account</span><h1>Profile</h1></div></div>
       <form className="profile-grid" onSubmit={submit}>
-        <div><div className="avatar" aria-label="Profile image" /><input style={{ marginTop: 12 }} type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setForm({ ...form, profile_image: e.target.files?.[0] || null })} /></div>
+        <div>
+          {user?.profile_image ? (
+            <img className="avatar" src={user.profile_image} alt="Profile" />
+          ) : (
+            <div className="avatar" aria-label="Profile image" />
+          )}
+          <input
+            style={{ marginTop: 12 }}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(event) => setForm({ ...form, profile_image: event.target.files?.[0] || null })}
+          />
+        </div>
         <div className="auth-card" style={{ width: '100%' }}>
           {error && <div className="error">{error}</div>}
           {saved && <div style={{ color: '#404040', marginBottom: 14 }}>Profile updated successfully.</div>}

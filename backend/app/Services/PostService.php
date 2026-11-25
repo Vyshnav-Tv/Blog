@@ -7,9 +7,9 @@ use App\Http\Requests\UpdatePostRequest;
 use App\Models\Post;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 class PostService
 {
@@ -52,8 +52,12 @@ class PostService
     {
         $data = $request->validated();
         $featuredImage = null;
-        if (isset($data['featured_image']) && $data['featured_image'] instanceof UploadedFile) {
-            $featuredImage = $data['featured_image']->store('posts', 'public');
+        if ($request->hasFile('featured_image')) {
+            $featuredImage = $request->file('featured_image')->store('posts');
+
+            if (! $featuredImage) {
+                throw new RuntimeException('Unable to store the featured image.');
+            }
         }
 
         return $user->posts()->create([
@@ -73,14 +77,23 @@ class PostService
             $data['slug'] = $this->uniqueSlug($data['title'], $post->id);
         }
 
-        if (isset($data['featured_image']) && $data['featured_image'] instanceof UploadedFile) {
-            if ($post->featured_image) {
-                Storage::disk('public')->delete($post->featured_image);
+        $oldImage = $post->featured_image;
+
+        if ($request->hasFile('featured_image')) {
+            $newImage = $request->file('featured_image')->store('posts');
+
+            if (! $newImage) {
+                throw new RuntimeException('Unable to store the featured image.');
             }
-            $data['featured_image'] = $data['featured_image']->store('posts', 'public');
+
+            $data['featured_image'] = $newImage;
         }
 
         $post->update($data);
+
+        if ($oldImage && $oldImage !== $post->featured_image) {
+            Storage::delete($oldImage);
+        }
 
         return $post->fresh('user');
     }
@@ -88,7 +101,7 @@ class PostService
     public function delete(Post $post): void
     {
         if ($post->featured_image) {
-            Storage::disk('public')->delete($post->featured_image);
+            Storage::delete($post->featured_image);
         }
 
         $post->delete();

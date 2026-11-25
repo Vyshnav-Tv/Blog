@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Post;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class BlogApiTest extends TestCase
@@ -54,18 +56,96 @@ class BlogApiTest extends TestCase
     public function test_a_user_can_create_a_post_and_the_public_can_read_it(): void
     {
         $writer = User::factory()->create();
+        $fullArticle = str_repeat('Full article paragraph. ', 40);
         $this->actingAs($writer, 'sanctum');
 
         $this->postJson('/api/posts', [
             'title' => 'A Simple Story',
-            'content' => 'The story content.',
+            'content' => $fullArticle,
         ])->assertCreated()
             ->assertJsonPath('data.slug', 'a-simple-story');
 
         $this->getJson('/api/public/posts/a-simple-story')
             ->assertOk()
             ->assertJsonPath('data.title', 'A Simple Story')
+            ->assertJsonPath('data.content', $fullArticle)
             ->assertJsonMissingPath('data.author.email');
+    }
+
+    public function test_a_post_image_is_saved_and_returned_as_a_public_url(): void
+    {
+        Storage::fake('public');
+        config(['filesystems.default' => 'public']);
+        $writer = User::factory()->create();
+
+        $response = $this->actingAs($writer, 'sanctum')->post('/api/posts', [
+            'title' => 'Image Story',
+            'content' => 'The story has a featured image.',
+            'featured_image' => UploadedFile::fake()->image('featured.png', 20, 20),
+        ], ['Accept' => 'application/json']);
+
+        $response->assertCreated();
+        $imagePath = $response->json('data.featured_image');
+        $databasePath = Post::where('title', 'Image Story')->value('featured_image');
+
+        $this->assertNotEmpty($databasePath);
+        Storage::disk('public')->assertExists($databasePath);
+        $this->assertSame(Storage::disk('public')->url($databasePath), $imagePath);
+    }
+
+    public function test_replacing_a_post_image_removes_the_old_file(): void
+    {
+        Storage::fake('public');
+        config(['filesystems.default' => 'public']);
+        $writer = User::factory()->create();
+        $oldImagePath = 'posts/old-image.png';
+        Storage::disk('public')->put($oldImagePath, 'old image');
+        $post = Post::create([
+            'user_id' => $writer->id,
+            'title' => 'Replace Image',
+            'slug' => 'replace-image',
+            'content' => 'Post content',
+            'featured_image' => $oldImagePath,
+        ]);
+
+        $response = $this->actingAs($writer, 'sanctum')->post('/api/posts/'.$post->id, [
+            '_method' => 'PUT',
+            'title' => 'Replace Image',
+            'content' => 'Updated post content',
+            'featured_image' => UploadedFile::fake()->image('new-image.png', 20, 20),
+        ], ['Accept' => 'application/json']);
+
+        $response->assertOk();
+        $newImagePath = Post::findOrFail($post->id)->featured_image;
+
+        Storage::disk('public')->assertMissing($oldImagePath);
+        Storage::disk('public')->assertExists($newImagePath);
+        $this->assertSame(
+            Storage::disk('public')->url($newImagePath),
+            $response->json('data.featured_image'),
+        );
+    }
+
+    public function test_invalid_and_oversized_post_images_are_rejected(): void
+    {
+        $writer = User::factory()->create();
+        $this->actingAs($writer, 'sanctum');
+
+        $this->post('/api/posts', [
+            'title' => 'Invalid Image',
+            'content' => 'Post content',
+            'featured_image' => UploadedFile::fake()->create('not-an-image.txt', 10, 'text/plain'),
+        ], ['Accept' => 'application/json'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('featured_image');
+
+        $this->post('/api/posts', [
+            'title' => 'Oversized Image',
+            'content' => 'Post content',
+            'featured_image' => UploadedFile::fake()->image('oversized.png', 20, 20)->size(2049),
+        ], ['Accept' => 'application/json'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('featured_image');
     }
 
     public function test_a_user_cannot_edit_another_users_post(): void
@@ -102,6 +182,55 @@ class BlogApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.name', 'Updated Name')
             ->assertJsonPath('data.description', 'A short biography.');
+    }
+
+    public function test_a_user_can_upload_and_replace_their_profile_picture(): void
+    {
+        Storage::fake('public');
+        config(['filesystems.default' => 'public']);
+        $user = User::factory()->create();
+
+        $firstResponse = $this->actingAs($user, 'sanctum')->post('/api/profile', [
+            '_method' => 'PUT',
+            'name' => $user->name,
+            'profile_image' => UploadedFile::fake()->image('profile.png', 20, 20),
+        ], ['Accept' => 'application/json']);
+
+        $firstResponse->assertOk();
+        $oldImagePath = $user->fresh()->profile_image;
+        Storage::disk('public')->assertExists($oldImagePath);
+        $this->assertSame(
+            Storage::disk('public')->url($oldImagePath),
+            $firstResponse->json('data.profile_image'),
+        );
+
+        $secondResponse = $this->post('/api/profile', [
+            '_method' => 'PUT',
+            'name' => $user->name,
+            'profile_image' => UploadedFile::fake()->image('new-profile.png', 20, 20),
+        ], ['Accept' => 'application/json']);
+
+        $secondResponse->assertOk();
+        $newImagePath = $user->fresh()->profile_image;
+        Storage::disk('public')->assertMissing($oldImagePath);
+        Storage::disk('public')->assertExists($newImagePath);
+        $this->assertSame(
+            Storage::disk('public')->url($newImagePath),
+            $secondResponse->json('data.profile_image'),
+        );
+    }
+
+    public function test_an_oversized_profile_picture_is_rejected(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user, 'sanctum')->post('/api/profile', [
+            '_method' => 'PUT',
+            'name' => $user->name,
+            'profile_image' => UploadedFile::fake()->image('oversized.png', 20, 20)->size(2049),
+        ], ['Accept' => 'application/json'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('profile_image');
     }
 
     public function test_an_admin_can_disable_a_post_and_remove_it_from_public_results(): void

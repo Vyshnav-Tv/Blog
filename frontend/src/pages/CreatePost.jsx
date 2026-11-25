@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { postService } from '../services/postService'
+import getRequestErrorMessage from '../utils/getRequestErrorMessage'
 
 export default function CreatePost() {
   const navigate = useNavigate()
@@ -24,7 +25,7 @@ export default function CreatePost() {
       await postService.create(postData)
       navigate('/dashboard')
     } catch (requestError) {
-      setError(requestError.response?.data?.message || 'Unable to create the post.')
+      setError(getRequestErrorMessage(requestError, 'Unable to create the post.'))
     } finally {
       setBusy(false)
     }

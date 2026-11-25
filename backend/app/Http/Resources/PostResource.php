@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Storage;
 
 class PostResource extends JsonResource
 {
@@ -14,7 +15,7 @@ class PostResource extends JsonResource
             'title' => $this->title,
             'slug' => $this->slug,
             'content' => $this->content,
-            'featured_image' => $this->featured_image ? url('storage/'.$this->featured_image) : null,
+            'featured_image' => $this->featured_image ? Storage::url($this->featured_image) : null,
             'status' => $this->status,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
@@ -23,7 +24,7 @@ class PostResource extends JsonResource
                     'id' => $this->user->id,
                     'name' => $this->user->name,
                     'profile_image' => $this->user->profile_image
-                        ? url('storage/'.$this->user->profile_image)
+                        ? Storage::url($this->user->profile_image)
                         : null,
                     'description' => $this->user->description,
                 ];

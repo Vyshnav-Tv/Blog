@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Loader from '../components/Loader'
 import { postService } from '../services/postService'
+import getRequestErrorMessage from '../utils/getRequestErrorMessage'
 
 export default function EditPost() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [form, setForm] = useState(null)
+  const [featuredImage, setFeaturedImage] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -42,12 +44,14 @@ export default function EditPost() {
       postData.append('title', form.title)
       postData.append('content', form.content)
 
-      if (form.featured_image) postData.append('featured_image', form.featured_image)
+      if (featuredImage) {
+        postData.append('featured_image', featuredImage)
+      }
 
       await postService.update(id, postData)
       navigate('/dashboard')
     } catch (requestError) {
-      setError(requestError.response?.data?.message || 'Unable to update the post.')
+      setError(getRequestErrorMessage(requestError, 'Unable to update the post.'))
     } finally {
       setBusy(false)
     }
@@ -64,6 +68,21 @@ export default function EditPost() {
         {error && <div className="error">{error}</div>}
         <div className="form-group"><label htmlFor="title">Title</label><input className="input" id="title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
         <div className="form-group"><label htmlFor="content">Content</label><textarea className="textarea" id="content" required value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} /></div>
+        {form.featured_image && (
+          <div className="form-group">
+            <label>Current featured image</label>
+            <img className="post-card-image" src={form.featured_image} alt="Current featured image" />
+          </div>
+        )}
+        <div className="form-group">
+          <label htmlFor="featured-image">Replace featured image</label>
+          <input
+            id="featured-image"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(event) => setFeaturedImage(event.target.files?.[0] || null)}
+          />
+        </div>
         <div className="form-actions"><button className="btn btn-primary" disabled={busy} type="submit">{busy ? 'Saving...' : 'Save changes'}</button><button className="btn btn-outline" type="button" onClick={() => navigate('/dashboard')}>Cancel</button></div>
       </form>
     </>
