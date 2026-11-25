@@ -56,7 +56,7 @@ class BlogApiTest extends TestCase
     public function test_a_user_can_create_a_post_and_the_public_can_read_it(): void
     {
         $writer = User::factory()->create();
-        $fullArticle = str_repeat('Full article paragraph. ', 40);
+        $fullArticle = trim(str_repeat('Full article paragraph. ', 40));
         $this->actingAs($writer, 'sanctum');
 
         $this->postJson('/api/posts', [
@@ -137,7 +137,7 @@ class BlogApiTest extends TestCase
             'featured_image' => UploadedFile::fake()->create('not-an-image.txt', 10, 'text/plain'),
         ], ['Accept' => 'application/json'])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors('featured_image');
+            ->assertJsonPath('errors.featured_image.0', 'Choose a valid image file.');
 
         $this->post('/api/posts', [
             'title' => 'Oversized Image',
@@ -145,7 +145,7 @@ class BlogApiTest extends TestCase
             'featured_image' => UploadedFile::fake()->image('oversized.png', 20, 20)->size(2049),
         ], ['Accept' => 'application/json'])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors('featured_image');
+            ->assertJsonPath('errors.featured_image.0', 'The featured image must be 2 MB or smaller.');
     }
 
     public function test_a_user_cannot_edit_another_users_post(): void
@@ -220,17 +220,26 @@ class BlogApiTest extends TestCase
         );
     }
 
-    public function test_an_oversized_profile_picture_is_rejected(): void
+    public function test_invalid_and_oversized_profile_pictures_are_rejected(): void
     {
         $user = User::factory()->create();
+        $this->actingAs($user, 'sanctum');
 
-        $this->actingAs($user, 'sanctum')->post('/api/profile', [
+        $this->post('/api/profile', [
+            '_method' => 'PUT',
+            'name' => $user->name,
+            'profile_image' => UploadedFile::fake()->create('not-an-image.txt', 10, 'text/plain'),
+        ], ['Accept' => 'application/json'])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.profile_image.0', 'Choose a valid profile image.');
+
+        $this->post('/api/profile', [
             '_method' => 'PUT',
             'name' => $user->name,
             'profile_image' => UploadedFile::fake()->image('oversized.png', 20, 20)->size(2049),
         ], ['Accept' => 'application/json'])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors('profile_image');
+            ->assertJsonPath('errors.profile_image.0', 'The profile image must be 2 MB or smaller.');
     }
 
     public function test_an_admin_can_disable_a_post_and_remove_it_from_public_results(): void
